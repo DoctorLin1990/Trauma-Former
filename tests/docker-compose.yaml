@@ -1,0 +1,300 @@
+version: '3.8'
+
+# Trauma-Former Digital Twin System
+# Complete Docker Compose configuration for deployment
+
+# Network configuration
+networks:
+  trauma-former-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
+
+# Volume configuration
+volumes:
+  redis-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/redis
+  
+  trauma-former-models:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./models
+  
+  trauma-former-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./logs
+  
+  trauma-former-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data
+  
+  postgres-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/postgres
+
+# Secret configuration (for production)
+secrets:
+  redis_password:
+    file: ./secrets/redis_password.txt
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  trauma_former_api_key:
+    file: ./secrets/trauma_former_api_key.txt
+
+# Services configuration
+services:
+  # Redis Database (State persistence)
+  redis:
+    image: redis:6.2-alpine
+    container_name: trauma-former-redis
+    restart: unless-stopped
+    networks:
+      - trauma-former-network
+    ports:
+      - "6379:6379"
+      - "9121:9121"  # Prometheus metrics
+    volumes:
+      - redis-data:/data
+      - ./deployment/redis_config.yaml:/usr/local/etc/redis/redis.conf
+      - ./scripts/redis-init.sh:/docker-entrypoint-initdb.d/redis-init.sh
+    command: redis-server /usr/local/etc/redis/redis.conf
+    environment:
+      - REDIS_PASSWORD_FILE=/run/secrets/redis_password
+      - REDIS_PORT=6379
+      - REDIS_DATABASES=16
+      - REDIS_MAXMEMORY=4gb
+      - TZ=Asia/Shanghai
+    secrets:
+      - redis_password
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+  
+  # PostgreSQL Database (Metadata and user data)
+  postgres:
+    image: postgres:14-alpine
+    container_name: trauma-former-postgres
+    restart: unless-stopped
+    networks:
+      - trauma-former-network
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+    environment:
+      - POSTGRES_DB=trauma_former
+      - POSTGRES_USER=trauma_admin
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    secrets:
+      - postgres_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trauma_admin -d trauma_former"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+  
+  # Trauma-Former Inference Server
+  trauma-former-inference:
+    build:
+      context: ../
+      dockerfile: deployment/Dockerfile.inference
+    container_name: trauma-former-inference
+    restart: unless-stopped
+    networks:
+      - trauma-former-network
+    ports:
+      - "8000:8000"  # REST API
+      - "8001:8001"  # gRPC API
+    volumes:
+      - trauma-former-models:/app/models
+      - trauma-former-logs:/app/logs
+      - trauma-former-data:/app/data
+      - ./config:/app/config
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - ENVIRONMENT=production
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD_FILE=/run/secrets/redis_password
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=trauma_former
+      - POSTGRES_USER=trauma_admin
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+      - MODEL_PATH=/app/models/trauma_former_v1.pth
+      - INFERENCE_BATCH_SIZE=32
+      - INFERENCE_WORKERS=4
+      - LOG_LEVEL=INFO
+      - API_KEY_FILE=/run/secrets/trauma_former_api_key
+    secrets:
+      - redis_password
+      - postgres_password
+      - trauma_former_api_key
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        reservations:
+          cpus: '2'
+          memory: 4G
+  
+  # Web API Gateway
+  api-gateway:
+    build:
+      context: ../
+      dockerfile: deployment/Dockerfile.api
+    container_name: trauma-former-api
+    restart: unless-stopped
+    networks:
+      - trauma-former-network
+    ports:
+      - "8080:8080"  # Main API
+      - "8081:8081"  # Admin API
+    volumes:
+      - trauma-former-logs:/app/logs
+      - ./config/api_config.yaml:/app/config/api_config.yaml
+    depends_on:
+      trauma-former-inference:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - ENVIRONMENT=production
+      - INFERENCE_SERVICE_URL=http://trauma-former-inference:8000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD_FILE=/run/secrets/redis_password
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=trauma_former
+      - POSTGRES_USER=trauma_admin
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+      - API_RATE_LIMIT=100/minute
+      - CORS_ORIGINS=*
+      - LOG_LEVEL=INFO
+    secrets:
+      - redis_password
+      - postgres_password
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+  
+  # Web Dashboard
+  dashboard:
+    build:
+      context: ../
+      dockerfile: deployment/Dockerfile.dashboard
+    container_name: trauma-former-dashboard
+    restart: unless-stopped
+    networks:
+      - trauma-former-network
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./config/dashboard_config.yaml:/app/config/dashboard_config.yaml
+    depends_on:
+      api-gateway:
+        condition: service_started
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080
+      - REACT_APP_WEBSOCKET_URL=ws://localhost:8080/ws
+      - REACT_APP_ENVIRONMENT=production
+      - REACT_APP_VERSION=1.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+  
+  # Message Queue (Celery + RabbitMQ)
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: trauma-former-rabbitmq
+    restart: unless-stopped
+    networks:
+      - trauma-former-network
+    ports:
+      - "5672:5672"  # AMQP
+      - "15672:15672"  # Management UI
+    environment:
+      - RABBITMQ_DEFAULT_USER=trauma_user
+      - RABBITMQ_DEFAULT_PASS_FILE=/run/secrets/rabbitmq_password
+      - RABBITMQ_DEFAULT_VHOST=trauma_vhost
+    volumes:
+      - ./data/rabbitmq:/var/lib/rabbitmq
+    secrets:
+      - source: postgres_password
+       
