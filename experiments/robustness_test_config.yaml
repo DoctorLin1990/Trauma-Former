@@ -1,0 +1,334 @@
+# Robustness Test Configuration for Trauma-Former
+# Tests model performance under various data imperfections
+# Corresponds to Section 4.2 of the paper
+
+# Experiment metadata
+experiment:
+  name: "Trauma-Former_Robustness_Tests"
+  version: "1.0.0"
+  description: "Robustness tests for Trauma-Former under data imperfections"
+  timestamp: "auto"
+
+# Model to test
+model:
+  path: "./results/experiment_20240101_120000/best_model.pth"
+  type: "Trauma-Former"  # Options: Trauma-Former, LSTM, Shock-Index
+  
+# Test data
+data:
+  test_data_path: "./data/synthetic/X_synthetic.npy"
+  test_labels_path: "./data/synthetic/y_synthetic.npy"
+  num_test_samples: 200  # Number of samples to use for testing
+  sequence_length: 30
+  num_features: 4
+
+# Noise robustness tests (Figure 5A)
+noise_tests:
+  enabled: true
+  tests:
+    - name: "Gaussian_Noise_Low"
+      noise_type: "gaussian"
+      noise_levels: [0.01, 0.05, 0.1, 0.2, 0.3]  # Standard deviation
+      signal_to_noise_ratios: [20, 10, 5, 0, -5]  # SNR in dB
+      num_repetitions: 5  # Repeat each test N times
+      
+    - name: "Gaussian_Noise_High"
+      noise_type: "gaussian"
+      noise_levels: [0.3, 0.5, 0.7, 1.0]
+      signal_to_noise_ratios: [0, -3, -6, -10]
+      num_repetitions: 5
+      
+    - name: "Impulse_Noise"
+      noise_type: "impulse"
+      noise_probabilities: [0.01, 0.05, 0.1, 0.2]
+      impulse_magnitudes: [2.0, 5.0, 10.0]  # Multiples of standard deviation
+      num_repetitions: 5
+      
+    - name: "Baseline_Wander"
+      noise_type: "baseline_wander"
+      frequencies: [0.1, 0.2, 0.5]  # Hz
+      amplitudes: [0.1, 0.2, 0.5]  # Multiples of signal amplitude
+      num_repetitions: 3
+
+# Missing data tests (Figure 5B)
+missing_data_tests:
+  enabled: true
+  tests:
+    - name: "Random_Missing"
+      missing_type: "random"
+      missing_rates: [0.1, 0.2, 0.3, 0.4, 0.5]
+      missing_pattern: "pointwise"  # Options: pointwise, block
+      block_sizes: [1, 3, 5]  # For block missing
+      num_repetitions: 5
+      
+    - name: "Feature_Missing"
+      missing_type: "feature"
+      missing_features: [0, 1, 2, 3]  # Feature indices
+      missing_durations: [5, 10, 15, 20, 25]  # Consecutive missing points
+      num_repetitions: 5
+      
+    - name: "Complete_Missing"
+      missing_type: "complete"
+      missing_rates: [0.1, 0.2, 0.3]
+      missing_pattern: "random"
+      num_repetitions: 5
+
+# Sensor fault tests (Figure 5C)
+sensor_fault_tests:
+  enabled: true
+  tests:
+    - name: "Heart_Rate_Fault"
+      faulty_sensor: 0  # HR
+      fault_types: ["constant", "zero", "noise", "drift"]
+      fault_durations: [5, 10, 15, 20, 25, 30]  # Seconds
+      fault_magnitudes: [0.5, 1.0, 2.0]  # Multiples of normal range
+      num_repetitions: 5
+      
+    - name: "Blood_Pressure_Fault"
+      faulty_sensor: 1  # SBP
+      fault_types: ["constant", "zero", "noise", "drift"]
+      fault_durations: [5, 10, 15, 20, 25, 30]
+      fault_magnitudes: [0.5, 1.0, 2.0]
+      num_repetitions: 5
+      
+    - name: "Multiple_Sensor_Faults"
+      faulty_sensors: [[0,1], [0,2], [1,2], [0,1,2]]  # Combinations
+      fault_types: ["noise", "constant"]
+      fault_durations: [10, 20]
+      fault_magnitudes: [1.0]
+      num_repetitions: 3
+
+# Timing and synchronization tests
+timing_tests:
+  enabled: true
+  tests:
+    - name: "Jitter_Test"
+      jitter_std: [0.01, 0.05, 0.1, 0.2]  # Seconds
+      sampling_rate: 1.0  # Hz
+      num_repetitions: 5
+      
+    - name: "Sampling_Rate_Variation"
+      sampling_rates: [0.5, 0.8, 1.0, 1.2, 1.5]  # Hz
+      resample_method: "linear"  # Options: linear, cubic, nearest
+      num_repetitions: 3
+
+# Data distribution shift tests
+distribution_shift_tests:
+  enabled: true
+  tests:
+    - name: "Feature_Distribution_Shift"
+      shift_type: "mean_shift"
+      shift_magnitudes: [0.1, 0.2, 0.5, 1.0]  # Standard deviations
+      affected_features: ["all", [0], [1], [0,1]]  # Which features to shift
+      num_repetitions: 5
+      
+    - name: "Scale_Shift"
+      shift_type: "scale"
+      scale_factors: [0.8, 0.9, 1.0, 1.1, 1.2]
+      affected_features: ["all"]
+      num_repetitions: 5
+
+# Outlier tests
+outlier_tests:
+  enabled: true
+  tests:
+    - name: "Single_Outlier"
+      outlier_type: "spike"
+      outlier_magnitudes: [3.0, 5.0, 10.0]  # Standard deviations
+      outlier_positions: ["random", "middle", "end"]
+      num_outliers: [1, 3, 5]
+      num_repetitions: 5
+
+# Evaluation metrics for robustness tests
+evaluation:
+  metrics:
+    - "auroc"
+    - "accuracy"
+    - "f1"
+    - "precision"
+    - "recall"
+    - "specificity"
+  
+  # Early warning metrics
+  early_warning:
+    warning_threshold: 0.8
+    metrics:
+      - "lead_time"
+      - "warning_accuracy"
+      - "false_alarm_rate"
+      - "detection_rate"
+  
+  # Statistical analysis
+  statistics:
+    confidence_intervals: true
+    confidence_level: 0.95
+    n_bootstraps: 1000
+    compare_to_baseline: true
+    baseline_performance:  # Expected baseline from Table 2
+      Trauma-Former:
+        auroc: 0.942
+        f1: 0.910
+      LSTM:
+        auroc: 0.881
+        f1: 0.842
+      Shock-Index:
+        auroc: 0.785
+        f1: 0.715
+
+# Visualization settings
+visualization:
+  # Figure 5 style plots
+  create_summary_plots: true
+  plot_types:
+    - "noise_robustness"
+    - "missing_data_robustness"
+    - "sensor_fault_robustness"
+  
+  # Plot settings
+  plot_settings:
+    figsize: [10, 8]
+    dpi: 300
+    color_palette: "viridis"
+    line_styles: ["solid", "dashed", "dotted", "dashdot"]
+    marker_styles: ["o", "s", "^", "D", "v"]
+    
+  # Save settings
+  save_plots: true
+  plot_dir: "./figures/robustness"
+  plot_format: "png"  # Options: png, pdf, svg
+
+# Baseline models for comparison
+baselines:
+  enabled: true
+  models:
+    - name: "LSTM"
+      path: "./models/saved/lstm_baseline.pth"
+      type: "LSTM"
+      
+    - name: "Shock-Index"
+      type: "rule_based"
+      threshold: 1.0
+
+# Test execution settings
+execution:
+  # Hardware
+  device: "cuda"  # Options: cuda, cpu
+  cuda_device: 0
+  num_workers: 4
+  
+  # Batch processing
+  batch_size: 32
+  num_repetitions: 5  # Default number of repetitions
+  
+  # Randomness
+  seed: 42
+  deterministic: true
+  
+  # Progress tracking
+  verbose: true
+  progress_bar: true
+  log_level: "INFO"
+
+# Output settings
+output:
+  # Results storage
+  results_dir: "./results/robustness_tests"
+  save_raw_results: true
+  save_summary: true
+  
+  # File formats
+  results_format: "json"  # Options: json, csv, pickle
+  summary_format: "json"
+  
+  # Report generation
+  generate_report: true
+  report_format: "html"  # Options: html, pdf, markdown
+  report_template: "./templates/robustness_report.html"
+
+# Advanced testing options
+advanced:
+  # Monte Carlo testing
+  monte_carlo:
+    enabled: false
+    n_iterations: 1000
+    random_seed: 42
+    
+  # Sensitivity analysis
+  sensitivity_analysis:
+    enabled: false
+    parameters: ["learning_rate", "dropout", "threshold"]
+    ranges: 
+      learning_rate: [0.00001, 0.0001, 0.001]
+      dropout: [0.0, 0.1, 0.2, 0.3]
+      threshold: [0.5, 0.6, 0.7, 0.8]
+      
+  # Ablation studies
+  ablation_studies:
+    enabled: false
+    components:
+      - "attention_mechanism"
+      - "positional_encoding"
+      - "feature_embeddings"
+    ablation_method: "remove"  # Options: remove, replace, degrade
+
+# Performance degradation thresholds
+degradation_thresholds:
+  # Acceptable performance degradation
+  acceptable_degradation:
+    auroc: 0.05    # 5% degradation acceptable
+    f1: 0.10       # 10% degradation acceptable
+    accuracy: 0.10  # 10% degradation acceptable
+  
+  # Critical degradation (system should fail gracefully)
+  critical_degradation:
+    auroc: 0.15    # 15% degradation critical
+    f1: 0.20       # 20% degradation critical
+    accuracy: 0.20  # 20% degradation critical
+  
+  # Early warning degradation
+  early_warning_degradation:
+    lead_time_reduction: 0.30  # 30% reduction in lead time acceptable
+    false_alarm_increase: 0.20  # 20% increase in false alarms acceptable
+
+# Test scenarios (specific cases)
+scenarios:
+  - name: "Ambulance_Transport"
+    description: "Simulates typical ambulance transport conditions"
+    noise_level: 0.1
+    missing_rate: 0.05
+    sensor_fault_probability: 0.01
+    duration: 1800  # 30 minutes
+    
+  - name: "Severe_Weather"
+    description: "Simulates transport in severe weather conditions"
+    noise_level: 0.3
+    missing_rate: 0.15
+    sensor_fault_probability: 0.05
+    duration: 1800
+    
+  - name: "Mass_Casualty"
+    description: "Simulates mass casualty incident with limited monitoring"
+    noise_level: 0.2
+    missing_rate: 0.25
+    sensor_fault_probability: 0.10
+    duration: 1200  # 20 minutes
+
+# Notes
+notes: |
+  This configuration file defines robustness tests for the Trauma-Former model.
+  
+  The tests simulate various real-world data imperfections that may occur
+  during prehospital trauma care:
+  
+  1. Noise robustness: Tests model performance under different noise levels
+  2. Missing data: Tests model with randomly missing data points
+  3. Sensor faults: Tests model with simulated sensor failures
+  4. Distribution shifts: Tests model with shifted data distributions
+  
+  Results from these tests should be comparable to Figure 5 in the paper.
+  
+  To run robustness tests:
+      python -m tests.test_model_robustness --config experiments/robustness_test_config.yaml
+  
+  Results will be saved to the specified output directory with detailed
+  statistical analysis and visualizations.

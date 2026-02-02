@@ -1,0 +1,440 @@
+# System Latency Test Configuration
+# Tests end-to-end latency of the 5G-enabled Digital Twin framework
+# Corresponds to Section 4.5 and Figure 7 of the paper
+
+# Experiment metadata
+experiment:
+  name: "Trauma-Former_Latency_Tests"
+  version: "1.0.0"
+  description: "End-to-end latency tests for real-time TIC prediction"
+  timestamp: "auto"
+  reference_latency: 47.2  # ms (from paper Table 2)
+
+# System components to test
+system_components:
+  # Edge device (ambulance)
+  edge_device:
+    enabled: true
+    simulation_mode: "software"  # Options: software, hardware
+    processing_delay_ms: 2.0  # Expected from paper
+    buffer_size: 1000
+    
+    # Simulated hardware
+    hardware_specs:
+      cpu: "ARM Cortex-A72"
+      memory: "4GB"
+      os: "Linux"
+      sampling_rate: 1.0  # Hz
+      
+  # Network (5G URLLC)
+  network:
+    enabled: true
+    simulation_mode: "software"
+    target_latency_ms: 20.0  # 5G URLLC target
+    reliability: 0.99999
+    
+    # Network parameters
+    parameters:
+      uplink_latency_ms: 18.0  # From paper
+      downlink_latency_ms: 5.0
+      jitter_ms: 1.0
+      packet_loss_rate: 0.00001
+      bandwidth_mbps: 100
+      
+    # Network slicing simulation
+    network_slicing:
+      enabled: true
+      slice_type: "URLLC"  # Options: URLLC, eMBB, mMTC
+      priority: "highest"
+      resource_guarantee: true
+      
+  # Cloud server (hospital)
+  cloud_server:
+    enabled: true
+    simulation_mode: "software"
+    inference_delay_ms: 15.2  # From paper
+    
+    # Hardware simulation
+    hardware_specs:
+      gpu: "NVIDIA A100"
+      cpu: "Intel Xeon"
+      memory: "32GB"
+      storage: "SSD"
+      
+    # Redis database
+    redis:
+      enabled: true
+      host: "localhost"
+      port: 6379
+      db: 0
+      expected_latency_ms: 0.5
+      
+  # Display/Alert system
+  display_system:
+    enabled: true
+    simulation_mode: "software"
+    display_delay_ms: 12.0  # From paper
+    
+    # Alert thresholds
+    alert_threshold: 0.8
+    alert_persistence: 3  # Consecutive alerts needed
+
+# Latency test scenarios
+latency_scenarios:
+  - name: "Ideal_Conditions"
+    description: "Optimal conditions with no network congestion"
+    network_latency_ms: 18.0
+    network_reliability: 0.99999
+    edge_load: 0.1
+    cloud_load: 0.1
+    data_rate_hz: 1.0
+    
+  - name: "Typical_Urban"
+    description: "Typical urban ambulance transport"
+    network_latency_ms: 25.0
+    network_reliability: 0.9999
+    edge_load: 0.3
+    cloud_load: 0.5
+    data_rate_hz: 1.0
+    
+  - name: "Rural_Area"
+    description: "Rural area with limited 5G coverage"
+    network_latency_ms: 40.0
+    network_reliability: 0.999
+    edge_load: 0.2
+    cloud_load: 0.3
+    data_rate_hz: 1.0
+    
+  - name: "Mass_Casualty"
+    description: "Mass casualty incident with high system load"
+    network_latency_ms: 35.0
+    network_reliability: 0.99
+    edge_load: 0.8
+    cloud_load: 0.9
+    data_rate_hz: 1.0
+    
+  - name: "Network_Congestion"
+    description: "Severe network congestion"
+    network_latency_ms: 60.0
+    network_reliability: 0.9
+    edge_load: 0.4
+    cloud_load: 0.6
+    data_rate_hz: 1.0
+
+# Test parameters
+test_parameters:
+  # Test duration
+  duration_seconds: 300  # 5 minutes per test
+  warmup_seconds: 10     # Initial warmup period
+  
+  # Data characteristics
+  data:
+    sequence_length: 30
+    num_features: 4
+    data_type: "synthetic"  # Options: synthetic, recorded
+    synthetic_data_profile: "typical_trauma"
+    
+  # Test repetitions
+  repetitions: 10
+  randomization: true
+  seed: 42
+
+# Latency measurement points
+measurement_points:
+  - name: "end_to_end"
+    description: "Total system latency"
+    components: ["edge_processing", "network_uplink", "cloud_inference", "network_downlink", "display"]
+    target_ms: 100.0  # System requirement from paper
+    
+  - name: "edge_processing"
+    description: "Edge device data processing"
+    target_ms: 5.0
+    
+  - name: "network_uplink"
+    description: "Data transmission to cloud"
+    target_ms: 20.0
+    
+  - name: "cloud_inference"
+    description: "Model inference on cloud"
+    target_ms: 50.0
+    
+  - name: "network_downlink"
+    description: "Results transmission back"
+    target_ms: 10.0
+    
+  - name: "display"
+    description: "Results display and alerting"
+    target_ms: 15.0
+    
+  - name: "redis_operations"
+    description: "Database read/write operations"
+    target_ms: 1.0
+
+# Performance metrics
+performance_metrics:
+  # Latency metrics
+  latency:
+    - "mean"
+    - "median"
+    - "p95"
+    - "p99"
+    - "max"
+    - "min"
+    - "std"
+    
+  # Throughput metrics
+  throughput:
+    - "inferences_per_second"
+    - "data_rate_mbps"
+    - "concurrent_patients"
+    
+  # Reliability metrics
+  reliability:
+    - "success_rate"
+    - "timeout_rate"
+    - "error_rate"
+    
+  # Quality metrics
+  quality:
+    - "prediction_accuracy"
+    - "early_warning_accuracy"
+    - "false_alarm_rate"
+
+# Hardware configurations to test
+hardware_configurations:
+  - name: "High_Performance"
+    edge_device: "NVIDIA Jetson AGX Xavier"
+    network: "5G Standalone (SA)"
+    cloud_server: "NVIDIA A100 x4"
+    redis: "In-memory cluster"
+    
+  - name: "Standard"
+    edge_device: "NVIDIA Jetson Nano"
+    network: "5G Non-Standalone (NSA)"
+    cloud_server: "NVIDIA T4"
+    redis: "Single instance"
+    
+  - name: "Low_Cost"
+    edge_device: "Raspberry Pi 4"
+    network: "4G LTE"
+    cloud_server: "CPU only"
+    redis: "Single instance"
+
+# Network configurations
+network_configurations:
+  - name: "5G_URLLC"
+    type: "5G"
+    slice_type: "URLLC"
+    latency_ms: 20.0
+    reliability: 0.99999
+    bandwidth_mbps: 100
+    
+  - name: "5G_eMBB"
+    type: "5G"
+    slice_type: "eMBB"
+    latency_ms: 30.0
+    reliability: 0.9999
+    bandwidth_mbps: 1000
+    
+  - name: "4G_LTE"
+    type: "4G"
+    latency_ms: 50.0
+    reliability: 0.99
+    bandwidth_mbps: 100
+    
+  - name: "WiFi"
+    type: "WiFi"
+    latency_ms: 100.0
+    reliability: 0.95
+    bandwidth_mbps: 50
+
+# Load testing parameters
+load_testing:
+  enabled: true
+  scenarios:
+    - name: "Single_Patient"
+      num_patients: 1
+      data_rate_hz: 1.0
+      
+    - name: "Multiple_Patients"
+      num_patients: 10
+      data_rate_hz: 1.0
+      
+    - name: "High_Frequency"
+      num_patients: 1
+      data_rate_hz: 10.0
+      
+    - name: "Stress_Test"
+      num_patients: 50
+      data_rate_hz: 1.0
+
+# Real-time requirements
+real_time_requirements:
+  # From paper Section 2.1
+  deterministic_latency: true
+  max_latency_ms: 100.0
+  min_frame_rate_hz: 1.0
+  data_freshness_ms: 1000.0
+  
+  # Clinical requirements
+  clinical_requirements:
+    decision_time_ms: 1000.0
+    update_frequency_hz: 1.0
+    alert_latency_ms: 500.0
+
+# Test execution
+execution:
+  # Hardware
+  device: "cuda"
+  cuda_device: 0
+  num_workers: 4
+  
+  # Timing
+  use_high_resolution_timer: true
+  timer_resolution_ns: 1
+  
+  # Profiling
+  enable_profiling: true
+  profile_cpu: true
+  profile_gpu: true
+  profile_memory: true
+  
+  # Logging
+  verbose: true
+  log_level: "INFO"
+  progress_bar: true
+
+# Visualization settings
+visualization:
+  # Figure 7 style plots
+  create_latency_breakdown: true
+  create_timeline_plots: true
+  
+  # Plot types
+  plot_types:
+    - "latency_distribution"
+    - "component_breakdown"
+    - "timeline_visualization"
+    - "load_vs_latency"
+    - "scenario_comparison"
+    
+  # Plot settings
+  plot_settings:
+    figsize: [12, 8]
+    dpi: 300
+    color_palette: "Set2"
+    
+  # Save settings
+  save_plots: true
+  plot_dir: "./figures/latency"
+  plot_format: "png"
+
+# Output configuration
+output:
+  # Results storage
+  results_dir: "./results/latency_tests"
+  save_raw_data: true
+  save_summary: true
+  
+  # Data formats
+  results_format: "json"
+  summary_format: "json"
+  raw_data_format: "csv"
+  
+  # Report generation
+  generate_report: true
+  report_format: "html"
+  report_template: "./templates/latency_report.html"
+  
+  # Comparison with paper results
+  compare_with_paper: true
+  paper_reference:
+    total_latency_ms: 47.2
+    component_latencies:
+      edge_processing: 2.0
+      network_uplink: 18.0
+      cloud_inference: 15.2
+      network_downlink: 12.0
+
+# Statistical analysis
+statistical_analysis:
+  enabled: true
+  tests:
+    - name: "t_test"
+      compare_to_target: true
+      target_value: 47.2
+      
+    - name: "anova"
+      compare_scenarios: true
+      
+    - name: "regression"
+      analyze_dependencies: true
+      
+  confidence_intervals: true
+  confidence_level: 0.95
+  n_bootstraps: 1000
+
+# Benchmark comparisons
+benchmarks:
+  - name: "LSTM_Baseline"
+    expected_latency_ms: 12.8
+    reference: "Table 2"
+    
+  - name: "Shock_Index"
+    expected_latency_ms: 0.1
+    reference: "Table 2"
+    
+  - name: "Clinical_Threshold"
+    value_ms: 1000.0
+    description: "Maximum acceptable latency for clinical decisions"
+
+# System optimization tests
+optimization_tests:
+  enabled: true
+  tests:
+    - name: "Model_Quantization"
+      techniques: ["fp16", "int8", "pruning"]
+      target_latency_reduction: 0.3  # 30% reduction
+      
+    - name: "Pipeline_Optimization"
+      techniques: ["batch_processing", "async_io", "caching"]
+      target_latency_reduction: 0.2
+      
+    - name: "Network_Optimization"
+      techniques: ["compression", "protocol_optimization", "edge_computing"]
+      target_latency_reduction: 0.4
+
+# Scalability tests
+scalability_tests:
+  enabled: true
+  metrics:
+    - "latency_vs_load"
+    - "throughput_vs_concurrency"
+    - "resource_utilization"
+    
+  parameters:
+    max_concurrent_patients: 100
+    load_increment: 10
+    duration_per_load: 60  # seconds
+
+# Notes
+notes: |
+  This configuration file defines latency tests for the Trauma-Former system.
+  
+  The tests measure end-to-end latency from vital sign acquisition to
+  clinical alert display, including:
+  
+  1. Edge processing (ambulance)
+  2. Network transmission (5G URLLC)
+  3. Cloud inference (Trauma-Former model)
+  4. Results transmission and display
+  
+  Target latency values are from the paper:
+  - Total system latency: 47.2 ms (well under 100 ms requirement)
+  - Component latencies as shown in Figure 7
+  
+  To run latency tests:
+      python inference_simulator.py --latency_test --config experiments/latency_test_config.yaml
+  
+  Results will include detailed latency breakdowns, statistical analysis,
+  and visualizations comparable to Figure 7 in the paper.
